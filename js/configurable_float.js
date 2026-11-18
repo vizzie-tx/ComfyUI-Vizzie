@@ -1,5 +1,26 @@
 import { app } from "../../scripts/app.js";
 
+function snapValue(value, { min, max, step }) {
+    value = Math.min(max, Math.max(min, value));
+    if (!Number.isFinite(value)) return value;
+
+    // Use decimal integers so a large minimum or a fractional step doesn't lose precision.
+    const decimals = [value, min, max, step].map((number) => {
+        const [mantissa, exponent = "0"] = String(number).split("e");
+        const [whole, fraction = ""] = mantissa.split(".");
+        return { digits: BigInt(whole + fraction), power: Number(exponent) - fraction.length };
+    });
+    const power = Math.min(...decimals.map((decimal) => decimal.power));
+    const [input, lower, upper, increment] = decimals.map(
+        (decimal) => decimal.digits * 10n ** BigInt(decimal.power - power),
+    );
+    const offset = input - lower;
+    const nearestStep = (2n * offset + increment) / (2n * increment);
+    const lastStep = (upper - lower) / increment;
+    const snapped = lower + (nearestStep > lastStep ? lastStep : nearestStep) * increment;
+    return Number(`${snapped}e${power}`);
+}
+
 function applyProperties(node) {
     const widget = node.widgets?.find((widget) => widget.name === "value");
     if (!widget) return;
@@ -12,7 +33,7 @@ function applyProperties(node) {
         step: step * 10,
         step2: step,
     });
-    widget.value = Math.min(max, Math.max(min, widget.value));
+    widget.value = snapValue(widget.value, node.properties);
     node.setDirtyCanvas?.(true);
 }
 
@@ -43,6 +64,16 @@ app.registerExtension({
             for (const name of propertyNames) {
                 // The numeric editor converts blank input to zero before calling the hook.
                 this.addProperty(name, defaults[name], "string");
+            }
+            const widget = this.widgets?.find((widget) => widget.name === "value");
+            if (widget) {
+                const { callback } = widget;
+                const node = this;
+                widget.callback = function (value, ...args) {
+                    const snapped = snapValue(value, node.properties);
+                    if (widget.value !== snapped) widget.value = snapped;
+                    return callback?.call(this, snapped, ...args);
+                };
             }
             applyProperties(this);
             return result;
