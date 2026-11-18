@@ -18,4 +18,3 @@ class ConfigurableFloat:
         return (value,)
 
 
-NODE_CLASS_MAPPINGS = {"ConfigurableFloat": ConfigurableFloat}

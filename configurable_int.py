@@ -17,5 +17,3 @@ class ConfigurableInt:
     def execute(self, value):
         return (value,)
 
-
-NODE_CLASS_MAPPINGS = {"ConfigurableInt": ConfigurableInt}
