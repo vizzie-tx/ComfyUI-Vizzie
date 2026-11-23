@@ -1,6 +1,14 @@
 import { app } from "../../scripts/app.js";
+import * as utils from "./utils.js";
+
+function hasValidGrid({ min, max, step }) {
+    return Number.isFinite(min) && Number.isFinite(max) && min <= max
+        && Number.isFinite(step) && step > 0 && Number.isFinite(step * 10);
+}
 
 function snapValue(value, { min, max, step }) {
+    // Connection hooks can run before saved properties are normalized.
+    if (!hasValidGrid({ min, max, step })) return value;
     value = Math.min(max, Math.max(min, value));
     if (!Number.isFinite(value)) return value;
 
@@ -21,11 +29,47 @@ function snapValue(value, { min, max, step }) {
     return Number(`${snapped}e${power}`);
 }
 
-function applyProperties(node) {
-    const widget = node.widgets?.find((widget) => widget.name === "value");
-    if (!widget) return;
+function unhookPromotedWidget(widget) {
+    const promotedWidget = widget?._cfPromotedWidget;
+    if (!promotedWidget) return;
 
-    const { min, max, step } = node.properties;
+    if (promotedWidget._internalHooked) {
+        if (promotedWidget._cfSetValue) {
+            promotedWidget.setValue = promotedWidget._cfSetValue;
+        } else {
+            delete promotedWidget.setValue;
+        }
+        delete promotedWidget._cfSetValue;
+        delete promotedWidget._internalHooked;
+    }
+    delete widget._cfPromotedWidget;
+}
+
+function hookPromotedWidget(node, widget) {
+    if (!widget) return;
+    const promotedWidget = utils.subgraphWidgetForWidget(node, widget);
+
+    if (promotedWidget && promotedWidget === widget._cfPromotedWidget) {
+        synchronizeWidget(promotedWidget, node.properties);
+        return;
+    }
+    unhookPromotedWidget(widget);
+    if (!promotedWidget || promotedWidget._internalHooked) return;
+    promotedWidget._internalHooked = true;
+
+    const origSetValue = promotedWidget.setValue;
+
+    promotedWidget._cfSetValue = origSetValue;
+    promotedWidget.setValue = function (value, ...args) {
+        const snapped = snapValue(value, node.properties);
+        if (snapped !== promotedWidget.value) promotedWidget.value = snapped;
+        return promotedWidget._cfSetValue?.call(promotedWidget, snapped, ...args);
+    };
+    widget._cfPromotedWidget = promotedWidget;
+    synchronizeWidget(promotedWidget, node.properties);
+}
+
+function synchronizeWidget(widget, { min, max, step }) {
     Object.assign(widget.options, {
         min,
         max,
@@ -33,7 +77,19 @@ function applyProperties(node) {
         step: step * 10,
         step2: step,
     });
-    widget.value = snapValue(widget.value, node.properties);
+    const value = widget.value;
+    const snapped = snapValue(value, { min, max, step });
+    if (Number.isFinite(snapped) && snapped !== value) widget.value = snapped;
+}
+
+function applyProperties(node) {
+    const widget = node.widgets?.find((widget) => widget.name === "value");
+    if (!widget) return;
+
+    synchronizeWidget(widget, node.properties);
+    if (widget._cfPromotedWidget) {
+        synchronizeWidget(widget._cfPromotedWidget, node.properties);
+    }
     node.setDirtyCanvas?.(true);
 }
 
@@ -44,7 +100,8 @@ app.registerExtension({
 
         const [, defaults] = nodeData.input.required.value;
         const propertyNames = ["min", "max", "step"];
-        const { onNodeCreated, onPropertyChanged, onConfigure } = nodeType.prototype;
+        const { onNodeCreated, onPropertyChanged, onConfigure, onConnectionsChange } = nodeType.prototype;
+        const { LiteGraph } = window;
 
         function propertyValue(name, value) {
             if (value == null || (typeof value === "string" && value.trim() === "")) {
@@ -53,10 +110,25 @@ app.registerExtension({
             return typeof value === "string" ? Number(value) : value;
         }
 
-        function isValid({ min, max, step }) {
-            return Number.isFinite(min) && Number.isFinite(max)
-                && min >= defaults.min && max <= defaults.max && min <= max
-                && Number.isFinite(step) && step > 0 && Number.isFinite(step * 10);
+        function isValid(properties) {
+            return hasValidGrid(properties) && properties.min >= defaults.min && properties.max <= defaults.max;
+        }
+
+        nodeType.prototype.onConnectionsChange = function(side, slot, connect, link_info, output) {
+            const result = onConnectionsChange?.apply(this, arguments);
+            if (!link_info) return;
+
+            if (side == LiteGraph.INPUT && link_info.origin_id == "-10") {
+                // Reconcile connection
+                const widget = this.widgets?.find((widget) => widget.name === "value");
+                if (connect) {
+                    hookPromotedWidget(this, widget);
+                } else {
+                    unhookPromotedWidget(widget);
+                }
+            }
+
+            return result;
         }
 
         nodeType.prototype.onNodeCreated = function (...args) {
@@ -105,5 +177,15 @@ app.registerExtension({
             applyProperties(this);
             return result;
         };
+    },
+    async afterConfigureGraph() {
+        utils.walkGraph(app.graph, (node) => {
+            if (node.comfyClass === "ConfigurableFloat") {
+                const widget = node.widgets?.find((widget) => widget.name === "value");
+                if (widget) {
+                    hookPromotedWidget(node, widget);
+                }
+            }
+        });
     },
 });
