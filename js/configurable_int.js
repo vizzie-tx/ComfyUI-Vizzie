@@ -4,11 +4,24 @@ import * as utils from "./utils.js";
 function snapValue(value, { min, max, step }) {
     if (!Number.isFinite(value)) return value;
 
-    // Find the nearest permitted step, anchored at min.
-    const steps = Math.round((value - min) / step);
-    const lastStep = Math.floor((max - min) / step);
+    // Connection hooks can run before saved properties are normalized.
+    if (!Number.isSafeInteger(min) || !Number.isSafeInteger(max) || min > max
+        || !Number.isSafeInteger(step) || step <= 0) return value;
 
-    return min + Math.max(0, Math.min(steps, lastStep)) * step;
+    const lower = BigInt(min);
+    const upper = BigInt(max);
+    const increment = BigInt(step);
+    const clamped = Math.min(max, Math.max(min, value));
+    const whole = Math.floor(clamped);
+
+    // Rounding thresholds are integers or half-integers. Keep the half bit
+    // separate so doubling a large offset never loses precision.
+    const half = clamped - whole >= 0.5 ? 1n : 0n;
+    const doubledOffset = 2n * (BigInt(whole) - lower) + half;
+    const nearestStep = (doubledOffset + increment) / (2n * increment);
+    const lastStep = (upper - lower) / increment;
+    const snapped = lower + (nearestStep > lastStep ? lastStep : nearestStep) * increment;
+    return Number(snapped);
 }
 
 function unhookPromotedWidget(widget) {
