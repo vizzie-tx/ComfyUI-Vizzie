@@ -12,42 +12,46 @@ function snapValue(value, { min, max, step }) {
 }
 
 function unhookPromotedWidget(widget) {
-    const promotedWidget = widget._ciPromotedWidget;
+    const promotedWidget = widget?._ciPromotedWidget;
     if (!promotedWidget) return;
     
     if (promotedWidget._internalHooked) {
         if (promotedWidget._ciSetValue) {
             promotedWidget.setValue = promotedWidget._ciSetValue;
-            delete promotedWidget._ciSetValue;
+        } else {
+            delete promotedWidget.setValue;
         }
+        delete promotedWidget._ciSetValue;
         delete promotedWidget._internalHooked;
     }
     delete widget._ciPromotedWidget;
 }
 
 function hookPromotedWidget(node, widget) {
+    if (!widget) return;
     const promotedWidget = utils.subgraphWidgetForWidget(node, widget);
-    
-    if (!promotedWidget  || promotedWidget._internalHooked) return;
+
+    if (promotedWidget && promotedWidget === widget._ciPromotedWidget) {
+        synchronizeWidget(promotedWidget, node.properties);
+        return;
+    }
+    unhookPromotedWidget(widget);
+    if (!promotedWidget || promotedWidget._internalHooked) return;
     promotedWidget._internalHooked = true;
 
     const origSetValue = promotedWidget.setValue;
 
-    promotedWidget._ciSetValue = origSetValue
-    console.log("Original setValue:", promotedWidget._ciSetValue);
+    promotedWidget._ciSetValue = origSetValue;
     promotedWidget.setValue = function (value, ...args) {
         const snapped = snapValue(value, node.properties);
         if (snapped !== promotedWidget.value) promotedWidget.value = snapped;
         return promotedWidget._ciSetValue?.call(promotedWidget, snapped, ...args);
     };
     widget._ciPromotedWidget = promotedWidget;
+    synchronizeWidget(promotedWidget, node.properties);
 }
 
-function applyProperties(node) {
-    const widget = node.widgets?.find((widget) => widget.name === "value");
-    if (!widget) return;
-
-    const { min, max, step } = node.properties;
+function synchronizeWidget(widget, { min, max, step }) {
     Object.assign(widget.options, {
         min,
         max,
@@ -55,7 +59,19 @@ function applyProperties(node) {
         step: step * 10,
         step2: step,
     });
-    widget.value = snapValue(widget.value, node.properties);
+    const value = widget.value;
+    const snapped = snapValue(value, { min, max, step });
+    if (Number.isFinite(snapped) && snapped !== value) widget.value = snapped;
+}
+
+function applyProperties(node) {
+    const widget = node.widgets?.find((widget) => widget.name === "value");
+    if (!widget) return;
+
+    synchronizeWidget(widget, node.properties);
+    if (widget._ciPromotedWidget) {
+        synchronizeWidget(widget._ciPromotedWidget, node.properties);
+    }
     node.setDirtyCanvas?.(true);
 }
 
