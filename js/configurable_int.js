@@ -1,4 +1,5 @@
 import { app } from "../../scripts/app.js";
+import * as utils from "./utils.js";
 
 function snapValue(value, { min, max, step }) {
     if (!Number.isFinite(value)) return value;
@@ -8,6 +9,38 @@ function snapValue(value, { min, max, step }) {
     const lastStep = Math.floor((max - min) / step);
 
     return min + Math.max(0, Math.min(steps, lastStep)) * step;
+}
+
+function unhookPromotedWidget(widget) {
+    const promotedWidget = widget._ciPromotedWidget;
+    if (!promotedWidget) return;
+    
+    if (promotedWidget._internalHooked) {
+        if (promotedWidget._ciSetValue) {
+            promotedWidget.setValue = promotedWidget._ciSetValue;
+            delete promotedWidget._ciSetValue;
+        }
+        delete promotedWidget._internalHooked;
+    }
+    delete widget._ciPromotedWidget;
+}
+
+function hookPromotedWidget(node, widget) {
+    const promotedWidget = utils.subgraphWidgetForWidget(node, widget);
+    
+    if (!promotedWidget  || promotedWidget._internalHooked) return;
+    promotedWidget._internalHooked = true;
+
+    const origSetValue = promotedWidget.setValue;
+
+    promotedWidget._ciSetValue = origSetValue
+    console.log("Original setValue:", promotedWidget._ciSetValue);
+    promotedWidget.setValue = function (value, ...args) {
+        const snapped = snapValue(value, node.properties);
+        if (snapped !== promotedWidget.value) promotedWidget.value = snapped;
+        return promotedWidget._ciSetValue?.call(promotedWidget, snapped, ...args);
+    };
+    widget._ciPromotedWidget = promotedWidget;
 }
 
 function applyProperties(node) {
@@ -33,7 +66,8 @@ app.registerExtension({
 
         const [, defaults] = nodeData.input.required.value;
         const propertyNames = ["min", "max", "step"];
-        const { onNodeCreated, onPropertyChanged, onConfigure } = nodeType.prototype;
+        const { onNodeCreated, onPropertyChanged, onConfigure, onConnectionsChange} = nodeType.prototype;
+        const { LiteGraph } = window;
 
         function propertyValue(name, value) {
             if (value == null || (typeof value === "string" && value.trim() === "")) {
@@ -42,7 +76,7 @@ app.registerExtension({
             return typeof value === "string" ? Number(value) : value;
         }
 
-	function isValid({ min, max, step }) {
+	    function isValid({ min, max, step }) {
             return Number.isSafeInteger(min)
                 && Number.isSafeInteger(max)
                 && Number.isSafeInteger(step)
@@ -52,12 +86,30 @@ app.registerExtension({
                 && step > 0;
         }
 
+        nodeType.prototype.onConnectionsChange = function(side, slot, connect, link_info, output) {
+            const result = onConnectionsChange?.apply(this, arguments);
+            if (!link_info) return;
+            
+            if (side == LiteGraph.INPUT && link_info.origin_id == "-10") {
+                // Reconcile connection
+                const widget = this.widgets?.find((widget) => widget.name === "value");
+                if (connect) {
+                    hookPromotedWidget(this, widget);
+                } else {
+                    unhookPromotedWidget(widget);
+                }
+            }
+
+            return result;
+        }
+
         nodeType.prototype.onNodeCreated = function (...args) {
             const result = onNodeCreated?.apply(this, args);
             for (const name of propertyNames) {
                 // The numeric editor converts blank input to zero before calling the hook.
                 this.addProperty(name, defaults[name], "string");
             }
+
             const widget = this.widgets?.find((widget) => widget.name === "value");
             if (widget) {
                 const { callback } = widget;
@@ -71,6 +123,7 @@ app.registerExtension({
             applyProperties(this);
             return result;
         };
+
 
         nodeType.prototype.onPropertyChanged = function (name, value, previous) {
             const result = onPropertyChanged?.call(this, name, value, previous);
@@ -98,5 +151,15 @@ app.registerExtension({
             applyProperties(this);
             return result;
         };
+    },
+    async afterConfigureGraph() {
+        utils.walkGraph(app.graph, (node) => {
+            if (node.comfyClass === "ConfigurableInt") {
+                const widget = node.widgets?.find((widget) => widget.name === "value");
+                if (widget) {
+                    hookPromotedWidget(node, widget);
+                }
+            }
+        });
     },
 });
