@@ -93,99 +93,101 @@ function applyProperties(node) {
     node.setDirtyCanvas?.(true);
 }
 
-app.registerExtension({
-    name: "Vizzie.ConfigurableFloat",
-    beforeRegisterNodeDef(nodeType, nodeData) {
-        if (nodeData.name !== "ConfigurableFloat") return;
+for (const ext of ["ConfigurableFloat", "ConfigurableFloatSlider"]) {
+    app.registerExtension({
+        name: "Vizzie." + ext,
+        beforeRegisterNodeDef(nodeType, nodeData) {
+            if (nodeData.name !== ("Vizzie_" + ext)) return;
 
-        const [, defaults] = nodeData.input.required.value;
-        const propertyNames = ["min", "max", "step"];
-        const { onNodeCreated, onPropertyChanged, onConfigure, onConnectionsChange } = nodeType.prototype;
-        const { LiteGraph } = window;
+            const [, defaults] = nodeData.input.required.value;
+            const propertyNames = ["min", "max", "step"];
+            const { onNodeCreated, onPropertyChanged, onConfigure, onConnectionsChange } = nodeType.prototype;
+            const { LiteGraph } = window;
 
-        function propertyValue(name, value) {
-            if (value == null || (typeof value === "string" && value.trim() === "")) {
-                return defaults[name];
-            }
-            return typeof value === "string" ? Number(value) : value;
-        }
-
-        function isValid(properties) {
-            return hasValidGrid(properties) && properties.min >= defaults.min && properties.max <= defaults.max;
-        }
-
-        nodeType.prototype.onConnectionsChange = function(side, slot, connect, link_info, output) {
-            const result = onConnectionsChange?.apply(this, arguments);
-            if (!link_info) return;
-
-            if (side == LiteGraph.INPUT && link_info.origin_id == "-10") {
-                // Reconcile connection
-                const widget = this.widgets?.find((widget) => widget.name === "value");
-                if (connect) {
-                    hookPromotedWidget(this, widget);
-                } else {
-                    unhookPromotedWidget(widget);
+            function propertyValue(name, value) {
+                if (value == null || (typeof value === "string" && value.trim() === "")) {
+                    return defaults[name];
                 }
+                return typeof value === "string" ? Number(value) : value;
             }
 
-            return result;
-        }
-
-        nodeType.prototype.onNodeCreated = function (...args) {
-            const result = onNodeCreated?.apply(this, args);
-            for (const name of propertyNames) {
-                // The numeric editor converts blank input to zero before calling the hook.
-                this.addProperty(name, defaults[name], "string");
+            function isValid(properties) {
+                return hasValidGrid(properties) && properties.min >= defaults.min && properties.max <= defaults.max;
             }
-            const widget = this.widgets?.find((widget) => widget.name === "value");
-            if (widget) {
-                const { callback } = widget;
-                const node = this;
-                widget.callback = function (value, ...args) {
-                    const snapped = snapValue(value, node.properties);
-                    if (widget.value !== snapped) widget.value = snapped;
-                    return callback?.call(this, snapped, ...args);
-                };
-            }
-            applyProperties(this);
-            return result;
-        };
 
-        nodeType.prototype.onPropertyChanged = function (name, value, previous) {
-            const result = onPropertyChanged?.call(this, name, value, previous);
-            // Workflow loading restores properties individually before onConfigure.
-            if (result === false || previous === undefined || !propertyNames.includes(name)) {
+            nodeType.prototype.onConnectionsChange = function(side, slot, connect, link_info, output) {
+                const result = onConnectionsChange?.apply(this, arguments);
+                if (!link_info) return;
+
+                if (side == LiteGraph.INPUT && link_info.origin_id == "-10") {
+                    // Reconcile connection
+                    const widget = this.widgets?.find((widget) => widget.name === "value");
+                    if (connect) {
+                        hookPromotedWidget(this, widget);
+                    } else {
+                        unhookPromotedWidget(widget);
+                    }
+                }
+
                 return result;
             }
-            const nextValue = propertyValue(name, value);
-            if (!isValid({ ...this.properties, [name]: nextValue })) return false;
-            this.properties[name] = nextValue;
-            applyProperties(this);
-            return result;
-        };
 
-        nodeType.prototype.onConfigure = function (...args) {
-            const result = onConfigure?.apply(this, args);
-            for (const name of propertyNames) {
-                this.properties[name] = propertyValue(name, this.properties[name]);
-            }
-            if (!isValid(this.properties)) {
+            nodeType.prototype.onNodeCreated = function (...args) {
+                const result = onNodeCreated?.apply(this, args);
                 for (const name of propertyNames) {
-                    this.properties[name] = defaults[name];
+                    // The numeric editor converts blank input to zero before calling the hook.
+                    this.addProperty(name, defaults[name], "string");
                 }
-            }
-            applyProperties(this);
-            return result;
-        };
-    },
-    async afterConfigureGraph() {
-        utils.walkGraph(app.graph, (node) => {
-            if (node.comfyClass === "ConfigurableFloat") {
-                const widget = node.widgets?.find((widget) => widget.name === "value");
+                const widget = this.widgets?.find((widget) => widget.name === "value");
                 if (widget) {
-                    hookPromotedWidget(node, widget);
+                    const { callback } = widget;
+                    const node = this;
+                    widget.callback = function (value, ...args) {
+                        const snapped = snapValue(value, node.properties);
+                        if (widget.value !== snapped) widget.value = snapped;
+                        return callback?.call(this, snapped, ...args);
+                    };
                 }
-            }
-        });
-    },
-});
+                applyProperties(this);
+                return result;
+            };
+
+            nodeType.prototype.onPropertyChanged = function (name, value, previous) {
+                const result = onPropertyChanged?.call(this, name, value, previous);
+                // Workflow loading restores properties individually before onConfigure.
+                if (result === false || previous === undefined || !propertyNames.includes(name)) {
+                    return result;
+                }
+                const nextValue = propertyValue(name, value);
+                if (!isValid({ ...this.properties, [name]: nextValue })) return false;
+                this.properties[name] = nextValue;
+                applyProperties(this);
+                return result;
+            };
+
+            nodeType.prototype.onConfigure = function (...args) {
+                const result = onConfigure?.apply(this, args);
+                for (const name of propertyNames) {
+                    this.properties[name] = propertyValue(name, this.properties[name]);
+                }
+                if (!isValid(this.properties)) {
+                    for (const name of propertyNames) {
+                        this.properties[name] = defaults[name];
+                    }
+                }
+                applyProperties(this);
+                return result;
+            };
+        },
+        async afterConfigureGraph() {
+            utils.walkGraph(app.graph, (node) => {
+                if (node.comfyClass === ("Vizzie_" + ext)) {
+                    const widget = node.widgets?.find((widget) => widget.name === "value");
+                    if (widget) {
+                        hookPromotedWidget(node, widget);
+                    }
+                }
+            });
+        },
+    });
+};
