@@ -71,3 +71,8 @@ change or the workflow loads. See the [ComfyUI subgraph
 guide](https://docs.comfy.org/interface/features/subgraph) for help
 working with subgraphs.
 
+Give a configurable node a custom title before connecting it to a subgraph
+input or output to use that title as the port label. This also applies
+when converting already-connected nodes into a subgraph. Existing custom
+port labels are preserved, and disconnecting a link keeps the label.
+

@@ -2,6 +2,7 @@ import { app } from "../../scripts/app.js";
 import { applyProperties, hookPromotedWidget, unhookPromotedWidget, walkGraph, widgetForInput } from "./utils.js";
 
 const propertyNames = ["min", "max", "step"];
+const defaultTitles = new Map();
 
 function installNumericProperties(nodeType, defaults, snapValue, hasValidGrid) {
     const { onNodeCreated, onPropertyChanged, onConfigure } = nodeType.prototype;
@@ -67,7 +68,54 @@ function installNumericProperties(nodeType, defaults, snapValue, hasValidGrid) {
     return isValid;
 }
 
-function installNumericConnections(nodeType, type, snapValue, isValid) {
+function renameSubgraphPort(node, defaultTitle, side, link) {
+    const { LiteGraph } = window;
+    const title = node.title?.trim();
+    if (!title || title === defaultTitle || title === node.constructor.title?.trim()) return;
+
+    const graph = node.graph;
+    if (side === LiteGraph.INPUT && String(link.origin_id) === "-10") {
+        const input = graph.inputs?.[link.origin_slot];
+        if (input && (!input.label || input.label === input.name) && title !== input.name) {
+            graph.renameInput?.(input, title);
+        }
+    } else if (side === LiteGraph.OUTPUT && String(link.target_id) === "-20") {
+        const output = graph.outputs?.[link.target_slot];
+        if (output && (!output.label || output.label === output.name) && title !== output.name) {
+            graph.renameOutput?.(output, title);
+        }
+    }
+}
+
+function renameConvertedSubgraphPorts(event) {
+    const graph = event.detail?.subgraphNode?.subgraph;
+    if (!graph) return;
+
+    const { LiteGraph } = window;
+    for (const [ports, side] of [[graph.inputs, LiteGraph.INPUT], [graph.outputs, LiteGraph.OUTPUT]]) {
+        for (const port of ports ?? []) {
+            for (const id of port.linkIds ?? []) {
+                const link = graph.getLink(id);
+                if (!link) continue;
+
+                const node = graph.getNodeById(side === LiteGraph.INPUT ? link.target_id : link.origin_id);
+                if (node && defaultTitles.has(node.comfyClass)) {
+                    renameSubgraphPort(node, defaultTitles.get(node.comfyClass), side, link);
+                }
+            }
+        }
+    }
+}
+
+app.registerExtension({
+    name: "Vizzie.SubgraphPortLabels",
+    setup() {
+        // Conversion creates boundary links while configuring the new graph.
+        document.addEventListener("subgraph-converted", renameConvertedSubgraphPorts);
+    },
+});
+
+function installNumericConnections(nodeType, defaultTitle, type, snapValue, isValid) {
     const { configure, onConnectionsChange } = nodeType.prototype;
     const { LiteGraph } = window;
     const configuring = new WeakSet();
@@ -110,7 +158,10 @@ function installNumericConnections(nodeType, type, snapValue, isValid) {
         }
 
         const graph = this.graph;
-        if (side !== LiteGraph.OUTPUT || !connect || !graph || configuring.has(this)) return result;
+        if (!connect || !graph || configuring.has(this)) return result;
+
+        renameSubgraphPort(this, defaultTitle, side, link);
+        if (side !== LiteGraph.OUTPUT) return result;
 
         const constraints = targetConstraints(graph, link);
         if (!constraints) return result;
@@ -137,8 +188,10 @@ export function registerNumericNodes(extensionNames, snapValue, hasValidGrid) {
                 if (nodeData.name !== nodeName) return;
 
                 const [type, defaults] = nodeData.input.required.value;
+                const defaultTitle = nodeData.display_name?.trim();
+                defaultTitles.set(nodeName, defaultTitle);
                 const isValid = installNumericProperties(nodeType, defaults, snapValue, hasValidGrid);
-                installNumericConnections(nodeType, type, snapValue, isValid);
+                installNumericConnections(nodeType, defaultTitle, type, snapValue, isValid);
             },
             async afterConfigureGraph() {
                 walkGraph(app.graph, (node) => {
