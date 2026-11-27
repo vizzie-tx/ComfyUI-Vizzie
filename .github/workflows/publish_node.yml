@@ -1,0 +1,21 @@
+name: Publish to Comfy Registry
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: read
+
+jobs:
+  publish-node:
+    name: Publish custom node
+    # Remove this condition when Registry publishing is ready.
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: Comfy-Org/publish-node-action@v1
+        with:
+          personal_access_token: ${{ secrets.REGISTRY_ACCESS_TOKEN }}

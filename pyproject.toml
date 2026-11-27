@@ -18,17 +18,6 @@ Repository = "https://github.com/vizzie-tx/ComfyUI-Vizzie"
 [tool.comfy]
 PublisherId = "vizzie-tx"
 DisplayName = "Vizzie Nodes"
-Icon = ""
-Tags = []
-Repository = "https://github.com/vizzie-tx/ComfyUI-Vizzie"
-
-includes = []
-
-[tool.pytest.ini_options]
-minversion = "8.0"
-testpaths = [
-    "tests",
-]
 
 [tool.mypy]
 files = "."
@@ -45,10 +34,7 @@ allow_untyped_defs = true
 disable_error_code = "attr-defined"
 
 [tool.ruff]
-# extend-exclude = ["static", "ci/templates"]
 line-length = 140
-src = ["src", "tests"]
-target-version = "py39"
 
 # Add rules to ban exec/eval
 [tool.ruff.lint]
