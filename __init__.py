@@ -1,7 +1,7 @@
-from .configurable_float import ConfigurableFloat
-from .configurable_float_slider import ConfigurableFloatSlider
-from .configurable_int import ConfigurableInt
-from .configurable_int_slider import ConfigurableIntSlider
+from .nodes.configurable_float import ConfigurableFloat
+from .nodes.configurable_float_slider import ConfigurableFloatSlider
+from .nodes.configurable_int import ConfigurableInt
+from .nodes.configurable_int_slider import ConfigurableIntSlider
 
 NODE_CLASS_MAPPINGS = {
     "Vizzie_ConfigurableInt": ConfigurableInt,
@@ -17,6 +17,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Vizzie_ConfigurableFloatSlider": "Configurable Float Slider",
 }
 
-WEB_DIRECTORY = "./js"
+WEB_DIRECTORY = "./web"
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
