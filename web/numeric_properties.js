@@ -174,8 +174,8 @@ function installNumericConnections(nodeType, defaultTitle, type, snapValue, isVa
             if (targetConfiguration(graph, other)) return result;
         }
         const { constraints, widget } = configuration;
-	const myWidget = this.widgets?.find((w) => w.name === "value");
-        if (myWidget && widget.value) {
+        const myWidget = this.widgets?.find((w) => w.name === "value");
+        if (myWidget && Number.isFinite(widget.value)) {
             myWidget.value = widget.value;
         }
 

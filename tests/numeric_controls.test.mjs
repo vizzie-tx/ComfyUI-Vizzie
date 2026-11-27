@@ -31,6 +31,11 @@ function createNode(suffix, type, defaults) {
         addProperty(name, value) {
             this.properties[name] = value;
         }
+
+        configure(restore) {
+            restore();
+            this.onConfigure();
+        }
     }
     const name = "Configurable" + suffix;
     app.extensions.get("Vizzie." + name).beforeRegisterNodeDef(NumericNode, {
@@ -81,4 +86,29 @@ test("invalid property edits are rejected and invalid saved grids restore defaul
     Object.assign(node.properties, { min: 20, max: 10, step: 2 });
     node.onConfigure();
     assert.deepEqual(node.properties, intDefaults);
+});
+
+test("the first connection copies zero and reloading preserves the saved value", () => {
+    const node = createNode("Int", "INT", intDefaults);
+    const [widget] = node.widgets;
+    const target = {
+        inputs: [{ name: "width", type: "INT" }],
+        widgets: [{ name: "width", value: 0, options: { min: 0, max: 20, step2: 2 } }],
+    };
+    const link = { id: 1, origin_id: 1, target_id: 2, target_slot: 0 };
+    node.graph = { getNodeById: (id) => (id === 2 ? target : undefined), links: { 1: link } };
+    const connect = () => node.onConnectionsChange(window.LiteGraph.OUTPUT, 0, true, link);
+
+    widget.value = 8;
+    connect();
+    assert.equal(widget.value, 0);
+    assert.deepEqual(node.properties, { min: 0, max: 20, step: 2 });
+
+    node.configure(() => {
+        widget.value = 14;
+        node.properties = { min: 2, max: 30, step: 4 };
+        connect();
+    });
+    assert.equal(widget.value, 14);
+    assert.deepEqual(node.properties, { min: 2, max: 30, step: 4 });
 });
