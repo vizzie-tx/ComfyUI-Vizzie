@@ -31,13 +31,20 @@ finding your installation directory.
 
 1. Search for one of the nodes listed above, or find
    them under **utilities → primitive**.
-2. Open the node's properties and set `min`, `max`, and `step`. Use
+2. Connect the node's output to an input of the matching type. If the
+   destination parameter is displayed as a widget, expose it as an
+   input first.
+3. Open the node's properties to adjust `min`, `max`, and `step`. Use
    whole numbers for the Int varieties and finite numbers for
    the Floats. The step must be positive, and the minimum must
    be less than or equal to the maximum.
-3. Set the node's `value` widget and connect its output to an input of
-   the matching type. If the destination parameter is displayed as a
-   widget, expose it as an input first.
+4. Set the node's `value` widget.
+
+All variants copy `min`, `max`, and `step` from the first connected
+widget of the matching type with compatible settings. They snap their current value
+to that grid. Additional connections keep the current settings while
+a compatible target remains connected. Reopening a workflow restores
+its saved settings.
 
 The widget snaps to the nearest value on the grid `min + n × step`, where `n` is a nonnegative integer. Halfway values round to the higher step. When `max` falls between steps, the highest selectable value is the last step below `max`. Clear a property to restore its default, provided the resulting settings are valid.
 
