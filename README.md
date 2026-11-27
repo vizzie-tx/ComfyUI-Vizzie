@@ -41,8 +41,9 @@ finding your installation directory.
 4. Set the node's `value` widget.
 
 All variants copy `min`, `max`, and `step` from the first connected
-widget of the matching type with compatible settings. They snap their current value
-to that grid. Additional connections keep the current settings while
+widget of the matching type with compatible settings. They adopt the
+widget's name as their title and snap their current value to its grid.
+Additional connections keep the current title and settings while
 a compatible target remains connected. Reopening a workflow restores
 its saved settings.
 
@@ -71,8 +72,9 @@ change or the workflow loads. See the [ComfyUI subgraph
 guide](https://docs.comfy.org/interface/features/subgraph) for help
 working with subgraphs.
 
-Give a configurable node a custom title before connecting it to a subgraph
-input or output to use that title as the port label. This also applies
-when converting already-connected nodes into a subgraph. Existing custom
-port labels are preserved, and disconnecting a link keeps the label.
+A configurable node's custom title labels its subgraph ports, whether
+the title is set manually before connecting or adopted from a widget
+during autoconfiguration. This also applies when converting
+already-connected nodes into a subgraph. Existing custom port labels
+are preserved, and disconnecting a link keeps the label.
 

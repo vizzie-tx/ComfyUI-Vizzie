@@ -87,10 +87,7 @@ function renameSubgraphPort(node, defaultTitle, side, link) {
     }
 }
 
-function renameConvertedSubgraphPorts(event) {
-    const graph = event.detail?.subgraphNode?.subgraph;
-    if (!graph) return;
-
+function renameConnectedSubgraphPorts(graph, sourceNode) {
     const { LiteGraph } = window;
     for (const [ports, side] of [[graph.inputs, LiteGraph.INPUT], [graph.outputs, LiteGraph.OUTPUT]]) {
         for (const port of ports ?? []) {
@@ -99,7 +96,7 @@ function renameConvertedSubgraphPorts(event) {
                 if (!link) continue;
 
                 const node = graph.getNodeById(side === LiteGraph.INPUT ? link.target_id : link.origin_id);
-                if (node && defaultTitles.has(node.comfyClass)) {
+                if (node && (!sourceNode || node === sourceNode) && defaultTitles.has(node.comfyClass)) {
                     renameSubgraphPort(node, defaultTitles.get(node.comfyClass), side, link);
                 }
             }
@@ -111,7 +108,10 @@ app.registerExtension({
     name: "Vizzie.SubgraphPortLabels",
     setup() {
         // Conversion creates boundary links while configuring the new graph.
-        document.addEventListener("subgraph-converted", renameConvertedSubgraphPorts);
+        document.addEventListener("subgraph-converted", (event) => {
+            const graph = event.detail?.subgraphNode?.subgraph;
+            if (graph) renameConnectedSubgraphPorts(graph);
+        });
     },
 });
 
@@ -120,19 +120,19 @@ function installNumericConnections(nodeType, defaultTitle, type, snapValue, isVa
     const { LiteGraph } = window;
     const configuring = new WeakSet();
 
-    function targetConstraints(graph, link) {
+    function targetConfiguration(graph, link) {
         if (String(link.target_id) === "-20") return;
 
         const target = graph.getNodeById(link.target_id);
         const input = target?.inputs?.[link.target_slot];
         if (input?.type !== type) return;
 
-        const options = widgetForInput(target, input)?.options;
-        if (!options) return;
+        const widget = widgetForInput(target, input);
+        if (!widget?.options) return;
 
-        const { min, max, step, step2 } = options;
+        const { min, max, step, step2 } = widget.options;
         const constraints = { min, max, step: step2 ?? step / 10 };
-        if (isValid(constraints)) return constraints;
+        if (isValid(constraints)) return { constraints, widget };
     }
 
     nodeType.prototype.configure = function (...args) {
@@ -163,17 +163,23 @@ function installNumericConnections(nodeType, defaultTitle, type, snapValue, isVa
         renameSubgraphPort(this, defaultTitle, side, link);
         if (side !== LiteGraph.OUTPUT) return result;
 
-        const constraints = targetConstraints(graph, link);
-        if (!constraints) return result;
+        const configuration = targetConfiguration(graph, link);
+        if (!configuration) return result;
 
         const { links } = graph;
         const graphLinks = links instanceof Map ? links.values() : Object.values(links ?? {});
         // Keep the current settings while another compatible target is connected.
         for (const other of graphLinks) {
             if (other.id === link.id || other.origin_id !== link.origin_id) continue;
-            if (targetConstraints(graph, other)) return result;
+            if (targetConfiguration(graph, other)) return result;
         }
+        const { constraints, widget } = configuration;
         Object.assign(this.properties, constraints);
+        const title = widget.name?.trim();
+        if (title) {
+            this.title = title;
+            renameConnectedSubgraphPorts(graph, this);
+        }
         applyProperties(this, snapValue);
         return result;
     };
